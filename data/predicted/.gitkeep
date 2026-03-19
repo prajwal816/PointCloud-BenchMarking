@@ -1,0 +1,2 @@
+# Data directory — place predicted and ground-truth point clouds here.
+# Supported formats: .ply, .pcd, .xyz, .npy, .npz
