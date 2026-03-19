@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-A high-performance benchmarking suite for evaluating 3D point cloud reconstruction quality. Computes **Chamfer Distance**, **Hausdorff Distance**, and **F-Score** metrics with sub-5 ms KD-tree spatial indexing, and provides batch evaluation, visualization, and performance profiling tools.
+A high-performance benchmarking suite for evaluating 3D point cloud reconstruction quality. Computes **Chamfer Distance**, **Hausdorff Distance**, **F-Score**, **Normal Consistency**, and **Earth Mover's Distance (EMD)** metrics with sub-5 ms KD-tree spatial indexing, and provides batch evaluation (parallel), visualization, and performance profiling tools.
 
 ---
 
@@ -12,17 +12,19 @@ A high-performance benchmarking suite for evaluating 3D point cloud reconstructi
 ```
 PointCloud-BenchMarking/
 ├── src/
-│   ├── metrics/          # Chamfer, Hausdorff, F-Score implementations
+│   ├── metrics/          # Chamfer, Hausdorff, F-Score, Normal Consistency, EMD
 │   ├── indexing/         # KD-tree spatial index (scipy / Open3D)
 │   ├── processing/       # Downsampling, outlier removal, surface reconstruction, I/O
-│   ├── evaluation/       # Single-pair & batch evaluators, report generator
-│   └── visualization/    # Overlay, error heatmaps, metric plots
+│   ├── evaluation/       # Single-pair & parallel batch evaluators, report generator
+│   ├── visualization/    # Overlay, error heatmaps, metric plots
+│   └── logging_config.py # Console + file logging
 ├── benchmarks/           # Synthetic performance profiling
 ├── configs/              # YAML evaluation configs
 ├── data/                 # Point cloud data (pred + GT directories)
-├── tests/                # Unit tests
-├── notebooks/            # Jupyter exploration notebooks
+├── tests/                # Unit tests (32 tests)
+├── notebooks/            # Jupyter demo notebook
 ├── evaluate.py           # CLI entry point
+├── pyproject.toml        # pip-installable package config
 ├── requirements.txt
 └── README.md
 ```
@@ -40,6 +42,9 @@ cd PointCloud-BenchMarking
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Or install as editable package
+pip install -e .
 ```
 
 ### Single Evaluation
@@ -51,9 +56,18 @@ python evaluate.py evaluate --pred data/predicted/sample.ply --gt data/ground_tr
 ### Batch Evaluation
 
 ```bash
+# Sequential
 python evaluate.py batch \
     --pred-dir data/predicted/ \
     --gt-dir data/ground_truth/ \
+    --output results/batch_results.csv \
+    --format csv
+
+# Parallel (auto-detect workers)
+python evaluate.py batch \
+    --pred-dir data/predicted/ \
+    --gt-dir data/ground_truth/ \
+    --parallel \
     --output results/batch_results.csv \
     --format csv
 ```
@@ -131,6 +145,40 @@ $$
 | Ideal | 1.0 |
 | Sensitive to | Fraction of well-reconstructed surface |
 
+### 4. Normal Consistency (NC)
+
+Measures the alignment of surface normals at nearest-neighbour correspondences.
+
+$$
+\text{NC}(P, Q) = \frac{1}{|P|} \sum_{p \in P} |\mathbf{n}_p \cdot \mathbf{n}_{\text{nn}(p, Q)}|
+$$
+
+**Intuition**: NC measures how well the predicted surface orientation matches the ground truth. A value of 1.0 means perfect normal alignment. Requires normals on both clouds (auto-estimated via Open3D if missing).
+
+| Property | Value |
+|---|---|
+| Range | [0, 1] |
+| Ideal | 1.0 |
+| Sensitive to | Surface normal orientation accuracy |
+
+### 5. Earth Mover's Distance (EMD)
+
+Optimal transport cost between two equal-sized point sets.
+
+$$
+\text{EMD}(P, Q) = \min_\phi \frac{1}{|P|} \sum_{p \in P} \|p - \phi(p)\|^2
+$$
+
+where φ is a bijection from P to Q.
+
+**Intuition**: EMD finds the optimal one-to-one matching and measures the average squared distance. It is stricter than Chamfer Distance because every point must be matched. O(n³) complexity — auto-subsamples large clouds.
+
+| Property | Value |
+|---|---|
+| Range | [0, ∞) |
+| Ideal | 0.0 |
+| Sensitive to | Global point distribution |
+
 ---
 
 ## ⚡ Performance Benchmarks
@@ -176,6 +224,8 @@ Benchmarks measured on synthetic sphere point clouds (average of 5 trials per si
 │  • Chamfer Distance                        │
 │  • Hausdorff Distance                      │
 │  • F-Score @ multiple thresholds           │
+│  • Normal Consistency (optional)           │
+│  • Earth Mover's Distance (optional)       │
 └────────────────────┬───────────────────────┘
                      │
           ┌──────────┼──────────┐
@@ -264,6 +314,15 @@ metrics:
     percentile: 100         # 100 = exact, <100 = robust
   fscore:
     thresholds: [0.001, 0.005, 0.01, 0.02, 0.05]
+  normal_consistency:
+    enabled: false          # requires Open3D for normal estimation
+  emd:
+    enabled: false          # O(n³) — auto-subsamples
+    max_points: 2048
+
+logging:
+  log_to_file: true
+  log_dir: "logs"
 ```
 
 Override via CLI:
@@ -309,10 +368,13 @@ python -m pytest tests/ -v --cov=src
 
 ```python
 from src.metrics import chamfer_distance, hausdorff_distance, f_score
+from src.metrics import normal_consistency, earth_movers_distance
 
-cd = chamfer_distance(pred, gt)           # → dict with mean, max, per-point
-hd = hausdorff_distance(pred, gt)          # → dict with symmetric, directed
-fs = f_score(pred, gt, thresholds=[0.01])  # → dict with precision, recall, F1
+cd = chamfer_distance(pred, gt)              # → dict with mean, max, per-point
+hd = hausdorff_distance(pred, gt)             # → dict with symmetric, directed
+fs = f_score(pred, gt, thresholds=[0.01])     # → dict with precision, recall, F1
+nc = normal_consistency(pred, gt)             # → dict with mean, std, per-point
+emd = earth_movers_distance(pred, gt)         # → dict with emd, emd_sqrt
 ```
 
 ### Processing
@@ -344,6 +406,8 @@ results = evaluator.evaluate(pred, gt)
 
 batch = BatchEvaluator(config)
 df = batch.evaluate_batch("data/predicted/", "data/ground_truth/")
+# or parallel:
+df = batch.evaluate_batch_parallel("data/predicted/", "data/ground_truth/", n_workers=4)
 ```
 
 ---
