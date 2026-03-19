@@ -21,14 +21,6 @@ import click
 import yaml
 import numpy as np
 
-# --------------- logging setup ---------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s │ %(levelname)-7s │ %(name)s │ %(message)s",
-    datefmt="%H:%M:%S",
-)
-logger = logging.getLogger("pcb-cli")
-
 
 def _load_config(config_path: str | None) -> dict:
     """Load YAML config, falling back to defaults."""
@@ -37,7 +29,6 @@ def _load_config(config_path: str | None) -> dict:
     if path.exists():
         with open(path, "r") as f:
             return yaml.safe_load(f)
-    logger.warning("Config not found at %s – using empty config", path)
     return {}
 
 
@@ -47,11 +38,15 @@ def _load_config(config_path: str | None) -> dict:
 @click.group()
 @click.option("--config", "-c", default=None, help="Path to YAML config file.")
 @click.option("--verbose", "-v", is_flag=True, help="Enable debug logging.")
+@click.option("--log-file/--no-log-file", default=True, help="Enable/disable file logging (default: on).")
 @click.pass_context
-def cli(ctx, config, verbose):
+def cli(ctx, config, verbose, log_file):
     """Point Cloud Benchmarking & Evaluation Framework."""
-    if verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+    from src.logging_config import setup_logging
+
+    level = "DEBUG" if verbose else "INFO"
+    setup_logging(level=level, log_to_file=log_file, log_to_console=True)
+
     ctx.ensure_object(dict)
     ctx.obj["config"] = _load_config(config)
 
@@ -96,15 +91,25 @@ def evaluate(ctx, pred, gt, output, no_preprocess):
 @click.option("--output", "-o", default="results/batch_results.json", help="Output file.")
 @click.option("--format", "fmt", type=click.Choice(["json", "csv"]), default="json")
 @click.option("--no-preprocess", is_flag=True)
+@click.option("--parallel", "-p", is_flag=True, help="Enable parallel evaluation.")
+@click.option("--workers", "-w", type=int, default=None, help="Number of parallel workers (default: auto).")
 @click.pass_context
-def batch(ctx, pred_dir, gt_dir, output, fmt, no_preprocess):
+def batch(ctx, pred_dir, gt_dir, output, fmt, no_preprocess, parallel, workers):
     """Batch-evaluate all matching point clouds in two directories."""
     from src.evaluation.batch_evaluator import BatchEvaluator
     from src.evaluation.report import generate_report
 
     config = ctx.obj["config"]
     be = BatchEvaluator(config)
-    df = be.evaluate_batch(pred_dir, gt_dir, preprocess=not no_preprocess)
+
+    if parallel:
+        df = be.evaluate_batch_parallel(
+            pred_dir, gt_dir,
+            preprocess=not no_preprocess,
+            n_workers=workers,
+        )
+    else:
+        df = be.evaluate_batch(pred_dir, gt_dir, preprocess=not no_preprocess)
 
     if df.empty:
         click.echo("No matching pairs found.")
@@ -173,3 +178,4 @@ def benchmark(ctx, output, plot):
 # ═══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     cli()
+

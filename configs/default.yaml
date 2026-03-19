@@ -32,6 +32,12 @@ metrics:
   fscore:
     enabled: true
     thresholds: [0.001, 0.005, 0.01, 0.02, 0.05]
+  normal_consistency:
+    enabled: false               # requires Open3D for normal estimation
+    estimate_normals: true
+  emd:
+    enabled: false               # O(n³) — auto-subsamples to max_points
+    max_points: 2048
 
 # ---- Spatial Indexing ----
 indexing:
@@ -52,8 +58,20 @@ visualization:
     dpi: 150
     figsize: [12, 6]
 
+# ---- Logging ----
+logging:
+  level: "INFO"                   # DEBUG | INFO | WARNING | ERROR
+  log_to_file: true
+  log_dir: "logs"
+
+# ---- Batch ----
+batch:
+  parallel: false
+  n_workers: null                 # null = auto (cpu_count)
+
 # ---- Benchmark ----
 benchmark:
   point_counts: [1000, 5000, 10000, 50000, 100000, 500000]
   num_trials: 5
   output_file: "benchmarks/results.json"
+
