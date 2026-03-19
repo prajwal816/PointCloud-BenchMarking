@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Data files (large binary)
+data/predicted/*.npy
+data/predicted/*.npz
+data/predicted/*.ply
+data/predicted/*.pcd
+data/ground_truth/*.npy
+data/ground_truth/*.npz
+data/ground_truth/*.ply
+data/ground_truth/*.pcd
+
+# Results
+results/
+benchmarks/results.json
+benchmarks/results.png
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+logs/
+*.log
