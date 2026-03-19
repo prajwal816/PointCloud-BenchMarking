@@ -72,17 +72,17 @@ def _report_single(result: Dict[str, Any], lines: list[str]) -> None:
     # Chamfer
     cd = result.get("chamfer", {})
     if cd:
-        lines.append("  ── Chamfer Distance ──")
+        lines.append("  -- Chamfer Distance --")
         lines.append(f"    Mean (bidirectional) : {cd.get('mean', 'N/A'):.6f}")
-        lines.append(f"    Forward  (pred→gt)   : {cd.get('forward', 'N/A'):.6f}")
-        lines.append(f"    Backward (gt→pred)   : {cd.get('backward', 'N/A'):.6f}")
+        lines.append(f"    Forward  (pred->gt)  : {cd.get('forward', 'N/A'):.6f}")
+        lines.append(f"    Backward (gt->pred)  : {cd.get('backward', 'N/A'):.6f}")
         lines.append(f"    Max                  : {cd.get('max', 'N/A'):.6f}")
         lines.append("")
 
     # Hausdorff
     hd = result.get("hausdorff", {})
     if hd:
-        lines.append("  ── Hausdorff Distance ──")
+        lines.append("  -- Hausdorff Distance --")
         lines.append(f"    Symmetric : {hd.get('symmetric', 'N/A'):.6f}")
         lines.append(f"    Forward   : {hd.get('forward', 'N/A'):.6f}")
         lines.append(f"    Backward  : {hd.get('backward', 'N/A'):.6f}")
@@ -91,9 +91,9 @@ def _report_single(result: Dict[str, Any], lines: list[str]) -> None:
     # F-Score
     fs = result.get("fscore", [])
     if fs:
-        lines.append("  ── F-Score ──")
+        lines.append("  -- F-Score --")
         lines.append(f"    {'Threshold':>10}  {'Precision':>10}  {'Recall':>10}  {'F1':>10}")
-        lines.append(f"    {'─' * 10}  {'─' * 10}  {'─' * 10}  {'─' * 10}")
+        lines.append(f"    {'-' * 10}  {'-' * 10}  {'-' * 10}  {'-' * 10}")
         for entry in fs:
             lines.append(
                 f"    {entry['threshold']:>10.4f}  "
@@ -112,11 +112,11 @@ def _report_dataframe(df: pd.DataFrame, lines: list[str]) -> None:
     # Summary statistics for key columns
     metric_cols = [c for c in df.columns if c not in ("sample", "error", "n_pred", "n_gt")]
     if metric_cols:
-        lines.append("  ── Summary Statistics ──")
+        lines.append("  -- Summary Statistics --")
         lines.append(
             f"    {'Metric':<28}  {'Mean':>10}  {'Std':>10}  {'Min':>10}  {'Max':>10}"
         )
-        lines.append(f"    {'─' * 28}  {'─' * 10}  {'─' * 10}  {'─' * 10}  {'─' * 10}")
+        lines.append(f"    {'-' * 28}  {'-' * 10}  {'-' * 10}  {'-' * 10}  {'-' * 10}")
         for col in metric_cols:
             if df[col].dtype in ("float64", "float32", "int64"):
                 series = df[col].dropna()
@@ -131,6 +131,6 @@ def _report_dataframe(df: pd.DataFrame, lines: list[str]) -> None:
         lines.append("")
 
     # Per-sample breakdown
-    lines.append("  ── Per-Sample Results ──")
+    lines.append("  -- Per-Sample Results --")
     lines.append(df.to_string(index=False, max_rows=50))
     lines.append("")
