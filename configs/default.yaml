@@ -1,0 +1,59 @@
+# ============================================================
+# Point Cloud Benchmarking — Default Configuration
+# ============================================================
+
+# ---- I/O Paths ----
+paths:
+  predicted_dir: "data/predicted"
+  ground_truth_dir: "data/ground_truth"
+  output_dir: "results"
+  output_format: "json"          # json | csv
+
+# ---- Preprocessing ----
+preprocessing:
+  enabled: true
+  voxel_downsample:
+    enabled: true
+    voxel_size: 0.02             # metres
+  outlier_removal:
+    enabled: true
+    method: "statistical"        # statistical
+    nb_neighbors: 20
+    std_ratio: 2.0
+
+# ---- Metrics ----
+metrics:
+  chamfer:
+    enabled: true
+    squared: false               # use squared L2 distances
+  hausdorff:
+    enabled: true
+    percentile: 100              # 100 = true Hausdorff; <100 = robust percentile
+  fscore:
+    enabled: true
+    thresholds: [0.001, 0.005, 0.01, 0.02, 0.05]
+
+# ---- Spatial Indexing ----
+indexing:
+  backend: "scipy"               # scipy | open3d
+  leaf_size: 16                   # KD-tree leaf size
+
+# ---- Visualization ----
+visualization:
+  enabled: true
+  overlay:
+    pred_color: [0.0, 0.6, 1.0]  # blue
+    gt_color: [1.0, 0.3, 0.1]    # orange-red
+    point_size: 2.0
+  heatmap:
+    colormap: "jet"               # matplotlib colormap
+    percentile_clip: 99           # clip top-N percentile for vis clarity
+  plots:
+    dpi: 150
+    figsize: [12, 6]
+
+# ---- Benchmark ----
+benchmark:
+  point_counts: [1000, 5000, 10000, 50000, 100000, 500000]
+  num_trials: 5
+  output_file: "benchmarks/results.json"
