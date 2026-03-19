@@ -12,6 +12,8 @@ import numpy as np
 from typing import Dict, Any, Optional
 
 from src.metrics import chamfer_distance, hausdorff_distance, f_score
+from src.metrics.normal_consistency import normal_consistency
+from src.metrics.emd import earth_movers_distance
 from src.processing.downsampling import voxel_downsample
 from src.processing.outlier_removal import statistical_outlier_removal
 
@@ -135,6 +137,39 @@ class PointCloudEvaluator:
             fs = f_score(pred, gt, thresholds=thresholds)
             results["fscore"] = fs["results"]
 
+        # Normal Consistency
+        nc_cfg = metrics_cfg.get("normal_consistency", {})
+        if nc_cfg.get("enabled", False):
+            try:
+                nc = normal_consistency(
+                    pred, gt,
+                    estimate_if_missing=nc_cfg.get("estimate_normals", True),
+                )
+                results["normal_consistency"] = {
+                    "mean": nc["normal_consistency_mean"],
+                    "std": nc["normal_consistency_std"],
+                    "median": nc["normal_consistency_median"],
+                }
+            except Exception as e:
+                logger.warning("Normal Consistency skipped: %s", e)
+
+        # Earth Mover's Distance
+        emd_cfg = metrics_cfg.get("emd", {})
+        if emd_cfg.get("enabled", False):
+            try:
+                emd = earth_movers_distance(
+                    pred, gt,
+                    max_points=emd_cfg.get("max_points", 2048),
+                )
+                results["emd"] = {
+                    "emd": emd["emd"],
+                    "emd_total": emd["emd_total"],
+                    "emd_sqrt": emd["emd_sqrt"],
+                    "n_points_used": emd["n_points_used"],
+                }
+            except Exception as e:
+                logger.warning("EMD skipped: %s", e)
+
         return results
 
     def evaluate_from_files(
@@ -152,3 +187,4 @@ class PointCloudEvaluator:
         results["pred_file"] = str(pred_path)
         results["gt_file"] = str(gt_path)
         return results
+
