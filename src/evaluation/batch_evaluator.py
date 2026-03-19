@@ -3,12 +3,15 @@ Batch Evaluator
 ===============
 Run evaluation across directories of predicted and ground-truth point clouds,
 aggregate results into a DataFrame, and export JSON / CSV.
+Supports parallel evaluation via multiprocessing.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import multiprocessing as mp
+from functools import partial
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
@@ -20,6 +23,23 @@ from src.evaluation.evaluator import PointCloudEvaluator
 from src.processing.io_utils import SUPPORTED_EXTENSIONS
 
 logger = logging.getLogger(__name__)
+
+
+# ---- Module-level worker function for multiprocessing (must be picklable) ----
+def _evaluate_pair_worker(pair_dict: Dict[str, str], config: dict, preprocess: bool) -> Dict[str, Any]:
+    """Worker function for parallel evaluation (runs in subprocess)."""
+    try:
+        evaluator = PointCloudEvaluator(config)
+        result = evaluator.evaluate_from_files(
+            pair_dict["pred"], pair_dict["gt"], preprocess=preprocess
+        )
+        row = BatchEvaluator._flatten(result, {
+            "pred": Path(pair_dict["pred"]),
+            "gt": Path(pair_dict["gt"]),
+        })
+        return row
+    except Exception as e:
+        return {"sample": Path(pair_dict["pred"]).stem, "error": str(e)}
 
 
 class BatchEvaluator:
@@ -61,7 +81,7 @@ class BatchEvaluator:
         return pairs
 
     # ------------------------------------------------------------------
-    # Batch Run
+    # Sequential Batch Run
     # ------------------------------------------------------------------
     def evaluate_batch(
         self,
@@ -69,7 +89,7 @@ class BatchEvaluator:
         gt_dir: str,
         preprocess: bool = True,
     ) -> pd.DataFrame:
-        """Run evaluation on all pairs.
+        """Run evaluation on all pairs (sequential).
 
         Returns
         -------
@@ -95,6 +115,68 @@ class BatchEvaluator:
         return pd.DataFrame(rows)
 
     # ------------------------------------------------------------------
+    # Parallel Batch Run
+    # ------------------------------------------------------------------
+    def evaluate_batch_parallel(
+        self,
+        pred_dir: str,
+        gt_dir: str,
+        preprocess: bool = True,
+        n_workers: Optional[int] = None,
+    ) -> pd.DataFrame:
+        """Run evaluation on all pairs in parallel using multiprocessing.
+
+        Parameters
+        ----------
+        pred_dir : str
+        gt_dir : str
+        preprocess : bool
+        n_workers : int or None
+            Number of parallel workers. Defaults to min(cpu_count, n_pairs).
+
+        Returns
+        -------
+        pd.DataFrame
+        """
+        pairs = self.find_pairs(pred_dir, gt_dir)
+        if not pairs:
+            logger.warning("No matching pairs found.")
+            return pd.DataFrame()
+
+        # Serialise paths for pickling across processes
+        pair_dicts = [
+            {"pred": str(p["pred"]), "gt": str(p["gt"])} for p in pairs
+        ]
+
+        if n_workers is None:
+            n_workers = min(mp.cpu_count(), len(pairs))
+        n_workers = max(1, n_workers)
+
+        logger.info(
+            "Parallel evaluation: %d pairs across %d workers", len(pairs), n_workers
+        )
+
+        worker_fn = partial(
+            _evaluate_pair_worker,
+            config=self.config,
+            preprocess=preprocess,
+        )
+
+        if n_workers == 1:
+            # Fall back to sequential for single worker
+            rows = [worker_fn(pd) for pd in tqdm(pair_dicts, desc="Evaluating", unit="pair")]
+        else:
+            with mp.Pool(processes=n_workers) as pool:
+                rows = list(tqdm(
+                    pool.imap(worker_fn, pair_dicts),
+                    total=len(pair_dicts),
+                    desc=f"Evaluating ({n_workers} workers)",
+                    unit="pair",
+                ))
+
+        return pd.DataFrame(rows)
+
+    # ------------------------------------------------------------------
     # Flatten dict for DataFrame
     # ------------------------------------------------------------------
     @staticmethod
@@ -115,6 +197,16 @@ class BatchEvaluator:
         row["hausdorff_symmetric"] = hd.get("symmetric")
         row["hausdorff_forward"] = hd.get("forward")
         row["hausdorff_backward"] = hd.get("backward")
+
+        # Normal Consistency
+        nc = result.get("normal_consistency", {})
+        if nc:
+            row["normal_consistency_mean"] = nc.get("mean")
+
+        # EMD
+        emd = result.get("emd", {})
+        if emd:
+            row["emd"] = emd.get("emd")
 
         # F-Scores
         for entry in result.get("fscore", []):
