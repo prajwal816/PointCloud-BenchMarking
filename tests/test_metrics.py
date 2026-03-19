@@ -1,7 +1,7 @@
 """
 Unit Tests — Metrics Module
 ============================
-Tests for Chamfer Distance, Hausdorff Distance, and F-Score on
+Tests for all metrics, KD-tree, and processing utilities on
 synthetic point clouds with known properties.
 """
 
@@ -16,6 +16,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from src.metrics.chamfer import chamfer_distance
 from src.metrics.hausdorff import hausdorff_distance
 from src.metrics.fscore import f_score
+from src.metrics.normal_consistency import normal_consistency
+from src.metrics.emd import earth_movers_distance
 from src.indexing.kdtree import KDTreeIndex
 from src.processing.downsampling import voxel_downsample
 from src.processing.outlier_removal import statistical_outlier_removal
@@ -166,6 +168,81 @@ class TestFScore:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  Normal Consistency Tests
+# ═══════════════════════════════════════════════════════════════
+
+class TestNormalConsistency:
+    def test_identical_with_normals(self):
+        """Identical clouds with identical normals → NC = 1.0."""
+        pts = generate_synthetic_sphere(500, seed=42)
+        normals = pts / np.linalg.norm(pts, axis=1, keepdims=True)
+        result = normal_consistency(pts, pts, normals, normals)
+        assert result["normal_consistency_mean"] == pytest.approx(1.0, abs=1e-6)
+
+    def test_flipped_normals(self):
+        """Flipped normals still score 1.0 (we measure |dot|)."""
+        pts = generate_synthetic_sphere(500, seed=42)
+        normals = pts / np.linalg.norm(pts, axis=1, keepdims=True)
+        result = normal_consistency(pts, pts, normals, -normals)
+        assert result["normal_consistency_mean"] == pytest.approx(1.0, abs=1e-6)
+
+    def test_range(self, noisy_cloud_pair):
+        """NC should be in [0, 1]."""
+        pred, gt = noisy_cloud_pair
+        normals_p = pred / np.linalg.norm(pred, axis=1, keepdims=True)
+        normals_g = gt / np.linalg.norm(gt, axis=1, keepdims=True)
+        result = normal_consistency(pred, gt, normals_p, normals_g)
+        assert 0.0 <= result["normal_consistency_mean"] <= 1.0
+
+    def test_per_point_shape(self):
+        pts = generate_synthetic_sphere(300, seed=42)
+        normals = pts / np.linalg.norm(pts, axis=1, keepdims=True)
+        result = normal_consistency(pts, pts, normals, normals)
+        assert result["per_point_consistency"].shape == (300,)
+
+    def test_invalid_input(self):
+        with pytest.raises(ValueError):
+            normal_consistency(np.zeros((10, 2)), np.zeros((10, 3)))
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Earth Mover's Distance Tests
+# ═══════════════════════════════════════════════════════════════
+
+class TestEMD:
+    def test_identical_clouds_zero(self):
+        """Identical clouds → EMD = 0."""
+        pts = generate_synthetic_sphere(500, seed=42)
+        result = earth_movers_distance(pts, pts, max_points=500)
+        assert result["emd"] == pytest.approx(0.0, abs=1e-10)
+
+    def test_offset_positive(self):
+        """Offset clouds → EMD > 0."""
+        gt = generate_synthetic_sphere(300, seed=42)
+        pred = gt + np.array([0.1, 0.0, 0.0])
+        result = earth_movers_distance(pred, gt, max_points=300)
+        assert result["emd"] > 0
+
+    def test_subsampling(self):
+        """Large clouds are subsampled to max_points."""
+        pts = generate_synthetic_sphere(5000, seed=42)
+        result = earth_movers_distance(pts, pts, max_points=256)
+        assert result["n_points_used"] == 256
+
+    def test_result_keys(self):
+        pts = generate_synthetic_sphere(200, seed=42)
+        result = earth_movers_distance(pts, pts, max_points=200)
+        assert "emd" in result
+        assert "emd_total" in result
+        assert "emd_sqrt" in result
+        assert "n_points_used" in result
+
+    def test_invalid_input(self):
+        with pytest.raises(ValueError):
+            earth_movers_distance(np.zeros((10, 2)), np.zeros((10, 3)))
+
+
+# ═══════════════════════════════════════════════════════════════
 #  KDTree Tests
 # ═══════════════════════════════════════════════════════════════
 
@@ -243,3 +320,4 @@ class TestProcessing:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
