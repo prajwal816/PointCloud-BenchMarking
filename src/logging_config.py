@@ -42,7 +42,7 @@ def setup_logging(
     root_logger.handlers.clear()
 
     formatter = logging.Formatter(
-        "%(asctime)s │ %(levelname)-7s │ %(name)-25s │ %(message)s",
+        "%(asctime)s | %(levelname)-7s | %(name)-25s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
